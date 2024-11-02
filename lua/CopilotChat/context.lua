@@ -2,42 +2,30 @@ local log = require('plenary.log')
 
 local M = {}
 
-local outline_types = {
-  'local_function',
-  'function_item',
-  'arrow_function',
-  'function_definition',
-  'function_declaration',
-  'method_definition',
-  'method_declaration',
-  'constructor_declaration',
-  'class_definition',
-  'class_declaration',
-  'interface_definition',
-  'interface_declaration',
-  'type_alias_declaration',
-  'import_statement',
-  'import_from_statement',
-}
+-- https://github.com/Aider-AI/aider/tree/0022c1a67e2b1bef61ccac61fb6fdea8a834e4b9/aider/queries
+local queries = {
+  ruby = vim.treesitter.query.parse("ruby", [[
+    (module
+      name: (constant) @name.definition.module) @definition.module
 
-local comment_types = {
-  'comment',
-  'line_comment',
-  'block_comment',
-  'doc_comment',
-}
+    (
+      [
+        (class
+          name: (constant) @name.definition.class) @definition.class
+        (singleton_class
+          value: (constant) @name.definition.class) @definition.class
+      ]
+    )
 
-local ignored_types = {
-  'export_statement',
-}
-
-local off_side_rule_languages = {
-  'python',
-  'coffeescript',
-  'nim',
-  'elm',
-  'curry',
-  'fsharp',
+    (
+      [
+        (method
+          name: (_) @name.definition.method) @definition.method
+        (singleton_method
+          name: (_) @name.definition.method) @definition.method
+      ]
+    )
+  ]]),
 }
 
 local big_file_threshold = 500
@@ -73,7 +61,7 @@ local function data_ranked_by_relatedness(query, data, top_n)
 end
 
 --- Build an outline for a buffer
---- FIXME: Handle multiline function argument definitions when building the outline
+--- Follows the example of https://github.com/Aider-AI/aider/blob/0022c1a67e2b1bef61ccac61fb6fdea8a834e4b9/tests/fixtures/sample-code-base-repo-map.txt
 ---@param bufnr number
 ---@return CopilotChat.copilot.embed?
 function M.build_outline(bufnr)
@@ -104,75 +92,43 @@ function M.build_outline(bufnr)
   end
 
   local root = parser:parse()[1]:root()
-  local outline_lines = {}
-  local comment_lines = {}
-  local depth = 0
+  local query = queries[lang]
 
-  local function get_outline_lines(node)
-    local type = node:type()
-    local parent = node:parent()
-    local is_outline = vim.tbl_contains(outline_types, type)
-    local is_comment = vim.tbl_contains(comment_types, type)
-    local is_ignored = vim.tbl_contains(ignored_types, type)
-      or parent and vim.tbl_contains(ignored_types, parent:type())
-    local start_row, start_col, end_row, end_col = node:range()
-    local skip_inner = false
-
-    if is_outline then
-      depth = depth + 1
-
-      if #comment_lines > 0 then
-        for _, line in ipairs(comment_lines) do
-          table.insert(outline_lines, string.rep('  ', depth) .. line)
-        end
-        comment_lines = {}
-      end
-
-      local start_line = vim.api.nvim_buf_get_lines(bufnr, start_row, start_row + 1, false)[1]
-      local signature_start =
-        vim.api.nvim_buf_get_text(bufnr, start_row, start_col, start_row, #start_line, {})[1]
-      table.insert(outline_lines, string.rep('  ', depth) .. vim.trim(signature_start))
-
-      -- If the function definition spans multiple lines, add an ellipsis
-      if start_row ~= end_row then
-        table.insert(outline_lines, string.rep('  ', depth + 1) .. '...')
-      else
-        skip_inner = true
-      end
-    elseif is_comment then
-      skip_inner = true
-      local comment = vim.split(vim.treesitter.get_node_text(node, bufnr, {}), '\n')
-      for _, line in ipairs(comment) do
-        table.insert(comment_lines, vim.trim(line))
-      end
-    elseif not is_ignored then
-      comment_lines = {}
-    end
-
-    if not skip_inner then
-      for child in node:iter_children() do
-        get_outline_lines(child)
-      end
-    end
-
-    if is_outline then
-      if not skip_inner and not vim.tbl_contains(off_side_rule_languages, ft) then
-        local signature_end =
-          vim.trim(vim.api.nvim_buf_get_text(bufnr, end_row, 0, end_row, end_col, {})[1])
-        table.insert(outline_lines, string.rep('  ', depth) .. signature_end)
-      end
-      depth = depth - 1
-    end
-  end
-
-  get_outline_lines(root)
-  local content = table.concat(outline_lines, '\n')
-  if content == '' then
+  if query == nil then
     return
   end
 
+  local sourcemap = {}
+  local previous_start_row = -1
+
+  for id, node, metadata in query:iter_captures(root, bufnr, 0, -1) do
+    local name = query.captures[id]
+    if name == "definition.module" or name == "definition.class" or name == "definition.method" then
+      local start_row, _, end_row, _ = node:range()
+      local line_text = vim.api.nvim_buf_get_lines(bufnr, start_row, start_row + 1, false)[1]
+
+      if previous_start_row + 1 ~= start_row then
+        -- TODO: This isn't perfect, as it doesn't take whitespace into account
+        table.insert(sourcemap, "⋮...")
+      end
+
+      line_text = "│" .. line_text
+      table.insert(sourcemap, line_text)
+
+      previous_start_row = start_row
+    end
+  end
+
+  if #sourcemap == 0 then
+    return
+  end
+
+  if previous_start_row ~= vim.api.nvim_buf_line_count(bufnr) - 1 then
+    table.insert(sourcemap, "⋮...")
+  end
+
   return {
-    content = table.concat(outline_lines, '\n'),
+    content = table.concat(sourcemap, '\n'),
     filename = name,
     filetype = ft,
   }
