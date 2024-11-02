@@ -109,18 +109,8 @@ function M.find_for_query(copilot, opts)
 
   local context_files = {}
   local function add_context(bufnr)
-    local content = nil
-
-    if bufnr == active_bufnr then
-      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-      content = table.concat(lines, '\n')
-    else
-      content = M.build_outline(bufnr)
-    end
-
-    if not content then
-      return
-    end
+    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+    local content = table.concat(lines, '\n')
 
     table.insert(context_files, {
       content = content,
