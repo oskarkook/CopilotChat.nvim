@@ -28,8 +28,6 @@ local queries = {
   ]]),
 }
 
-local big_file_threshold = 500
-
 local function spatial_distance_cosine(a, b)
   local dot_product = 0
   local magnitude_a = 0
@@ -65,25 +63,13 @@ end
 ---@param bufnr number
 ---@return CopilotChat.copilot.embed?
 function M.build_outline(bufnr)
-  local name = vim.api.nvim_buf_get_name(bufnr)
-  local ft = vim.bo[bufnr].filetype
-
-  -- If buffer is not too big, just return the content
-  local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-  if #lines < big_file_threshold then
-    return {
-      content = table.concat(lines, '\n'),
-      filename = name,
-      filetype = ft,
-    }
-  end
-
   local lang = vim.treesitter.language.get_lang(ft)
   local ok, parser = false, nil
   if lang then
     ok, parser = pcall(vim.treesitter.get_parser, bufnr, lang)
   end
   if not ok or not parser then
+    local ft = vim.bo[bufnr].filetype
     ft = string.gsub(ft, 'react', '')
     ok, parser = pcall(vim.treesitter.get_parser, bufnr, ft)
     if not ok or not parser then
@@ -127,11 +113,7 @@ function M.build_outline(bufnr)
     table.insert(sourcemap, "⋮...")
   end
 
-  return {
-    content = table.concat(sourcemap, '\n'),
-    filename = name,
-    filetype = ft,
-  }
+  return table.concat(sourcemap, '\n')
 end
 
 ---@class CopilotChat.context.find_for_query.opts
@@ -153,35 +135,49 @@ function M.find_for_query(copilot, opts)
   local selection = opts.selection
   local filename = opts.filename
   local filetype = opts.filetype
-  local bufnr = opts.bufnr
+  local active_bufnr = opts.bufnr
   local on_done = opts.on_done
   local on_error = opts.on_error
 
-  local outline = {}
+  local context_files = {}
+  local function add_context(bufnr)
+    local content = nil
+
+    if bufnr == active_bufnr then
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      content = table.concat(lines, '\n')
+    else
+      content = M.build_outline(bufnr)
+    end
+
+    if not content then
+      return
+    end
+
+    table.insert(context_files, {
+      content = content,
+      filename = vim.api.nvim_buf_get_name(bufnr),
+      filetype = vim.api.nvim_buf_get_option(bufnr, 'filetype'),
+    })
+  end
+
   if context == 'buffers' then
-    -- For multiple buffers, only make outlines
-    outline = vim.tbl_map(
-      function(b)
-        return M.build_outline(b)
-      end,
+    context_files = vim.tbl_map(
+      add_context,
       vim.tbl_filter(function(b)
         return vim.api.nvim_buf_is_loaded(b) and vim.fn.buflisted(b) == 1
       end, vim.api.nvim_list_bufs())
     )
   elseif context == 'buffer' then
-    table.insert(outline, M.build_outline(bufnr) or nil)
+    add_context(active_bufnr)
   end
 
-  outline = vim.tbl_filter(function(item)
-    return item ~= nil
-  end, outline)
-
-  if #outline == 0 then
+  if #context_files == 0 then
     on_done({})
     return
   end
 
-  copilot:embed(outline, {
+  copilot:embed(context_files, {
     on_error = on_error,
     on_done = function(out)
       out = vim.tbl_filter(function(item)
