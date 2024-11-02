@@ -294,7 +294,6 @@ local Copilot = class(function(self, proxy, allow_insecure)
   self.proxy = proxy
   self.allow_insecure = allow_insecure
   self.github_token = get_cached_token()
-  self.history = {}
   self.token = nil
   self.token_count = 0
   self.sessionid = nil
@@ -466,8 +465,9 @@ end
 
 --- Ask a question to Copilot
 ---@param prompt string: The prompt to send to Copilot
+---@param history table<CopilotChat.copilot.message>: The history of the conversation
 ---@param opts CopilotChat.copilot.ask.opts: Options for the request
-function Copilot:ask(prompt, opts)
+function Copilot:ask(prompt, history, opts)
   opts = opts or {}
   local embeddings = opts.embeddings or {}
   local filename = opts.filename or ''
@@ -533,7 +533,7 @@ function Copilot:ask(prompt, opts)
         local url = 'https://api.githubcopilot.com/chat/completions'
         local body = vim.json.encode(
           generate_ask_request(
-            self.history,
+            history,
             prompt,
             embeddings_message,
             selection_message,
@@ -542,12 +542,6 @@ function Copilot:ask(prompt, opts)
             temperature
           )
         )
-
-        -- Add the prompt to history after we have encoded the request
-        table.insert(self.history, {
-          content = prompt,
-          role = 'user',
-        })
 
         local errored = false
         local full_response = ''
@@ -578,10 +572,6 @@ function Copilot:ask(prompt, opts)
               on_done(full_response, self.token_count + current_count)
             end
 
-            table.insert(self.history, {
-              content = full_response,
-              role = 'assistant',
-            })
             return
           end
 
@@ -622,10 +612,6 @@ function Copilot:ask(prompt, opts)
               on_done(content, self.token_count + current_count)
             end
 
-            table.insert(self.history, {
-              content = content,
-              role = 'assistant',
-            })
             return
           end
 
@@ -774,55 +760,11 @@ function Copilot:stop()
   return false
 end
 
---- Reset the history and stop any running job
+--- Reset and stop any running job
 function Copilot:reset()
   local stopped = self:stop()
-  self.history = {}
   self.token_count = 0
   return stopped
-end
-
---- Save the history to a file
----@param name string: The name to save the history to
----@param path string: The path to save the history to
-function Copilot:save(name, path)
-  local history = vim.json.encode(self.history)
-  path = vim.fn.expand(path)
-  vim.fn.mkdir(path, 'p')
-  path = path .. '/' .. name .. '.json'
-  local file = io.open(path, 'w')
-  if not file then
-    log.error('Failed to save history to ' .. path)
-    return
-  end
-
-  file:write(history)
-  file:close()
-  log.info('Saved Copilot history to ' .. path)
-end
-
---- Load the history from a file
----@param name string: The name to load the history from
----@param path string: The path to load the history from
----@return table
-function Copilot:load(name, path)
-  path = vim.fn.expand(path) .. '/' .. name .. '.json'
-  local file = io.open(path, 'r')
-  if not file then
-    return {}
-  end
-
-  local history = file:read('*a')
-  file:close()
-  self.history = vim.json.decode(history, {
-    luanil = {
-      object = true,
-      array = true,
-    },
-  })
-
-  log.info('Loaded Copilot history from ' .. path)
-  return self.history
 end
 
 --- Check if there is a running job

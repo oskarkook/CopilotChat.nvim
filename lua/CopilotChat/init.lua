@@ -24,6 +24,7 @@ local plugin_name = 'CopilotChat.nvim'
 --- @field user_selection CopilotChat.Overlay?
 --- @field help CopilotChat.Overlay?
 local state = {
+  history = {},
   copilot = nil,
   chat = nil,
   source = nil,
@@ -411,7 +412,15 @@ function M.ask(prompt, config, source)
   end
   updated_prompt = string.gsub(updated_prompt, '@buffers?%s*', '')
 
+  local function record_user_prompt()
+    table.insert(state.history, {
+      content = updated_prompt,
+      role = 'user',
+    })
+  end
+
   local function on_error(err)
+    record_user_prompt()
     vim.schedule(function()
       append('\n\n' .. config.error_header .. config.separator .. '\n\n', config)
       append('```\n' .. err .. '\n```', config)
@@ -429,7 +438,7 @@ function M.ask(prompt, config, source)
     bufnr = state.source.bufnr,
     on_error = on_error,
     on_done = function(embeddings)
-      state.copilot:ask(updated_prompt, {
+      state.copilot:ask(updated_prompt, state.history, {
         selection = selection.lines,
         embeddings = embeddings,
         filename = filename,
@@ -441,6 +450,13 @@ function M.ask(prompt, config, source)
         temperature = config.temperature,
         on_error = on_error,
         on_done = function(response, token_count)
+          record_user_prompt()
+
+          table.insert(state.history, {
+            content = response,
+            role = 'assistant',
+          })
+
           vim.schedule(function()
             append('\n\n' .. config.question_header .. config.separator .. '\n\n', config)
             state.response = response
@@ -470,6 +486,7 @@ end
 function M.stop(reset, config)
   config = vim.tbl_deep_extend('force', M.config, config or {})
   state.response = nil
+  state.history = {}
   local stopped = reset and state.copilot:reset() or state.copilot:stop()
   local wrap = vim.schedule
   if not stopped then
@@ -495,6 +512,21 @@ function M.reset(config)
   M.stop(true, config)
 end
 
+local function save_file(name, path, data)
+  path = vim.fn.expand(path)
+  vim.fn.mkdir(path, 'p')
+  path = path .. '/' .. name .. '.json'
+  local file = io.open(path, 'w')
+  if not file then
+    log.error('Failed to save history to ' .. path)
+    return
+  end
+
+  file:write(vim.json.encode(data))
+  file:close()
+  log.info('Saved Copilot history to ' .. path)
+end
+
 --- Save the chat history to a file.
 ---@param name string?
 ---@param history_path string?
@@ -507,8 +539,25 @@ function M.save(name, history_path)
 
   history_path = history_path or M.config.history_path
   if history_path then
-    state.copilot:save(name, history_path)
+    save_file(name, history_path, state.history)
   end
+end
+
+local function load_file(name, path)
+  path = vim.fn.expand(path) .. '/' .. name .. '.json'
+  local file = io.open(path, 'r')
+  if not file then
+    return {}
+  end
+
+  local encoded_data = file:read('*a')
+  file:close()
+  return vim.json.decode(encoded_data, {
+    luanil = {
+      object = true,
+      array = true,
+    },
+  })
 end
 
 --- Load the chat history from a file.
@@ -526,10 +575,11 @@ function M.load(name, history_path)
     return
   end
 
-  state.copilot:reset()
-  state.chat:clear()
+  M.stop(true)
+  local history = load_file(name, history_path)
+  state.history = history
+  log.info('Loaded Copilot history from ' .. path)
 
-  local history = state.copilot:load(name, history_path)
   for i, message in ipairs(history) do
     if message.role == 'user' then
       if i > 1 then
