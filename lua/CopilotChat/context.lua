@@ -1,5 +1,3 @@
-local log = require('plenary.log')
-
 local M = {}
 
 -- https://github.com/Aider-AI/aider/tree/0022c1a67e2b1bef61ccac61fb6fdea8a834e4b9/aider/queries
@@ -27,36 +25,6 @@ local queries = {
     )
   ]]),
 }
-
-local function spatial_distance_cosine(a, b)
-  local dot_product = 0
-  local magnitude_a = 0
-  local magnitude_b = 0
-  for i = 1, #a do
-    dot_product = dot_product + a[i] * b[i]
-    magnitude_a = magnitude_a + a[i] * a[i]
-    magnitude_b = magnitude_b + b[i] * b[i]
-  end
-  magnitude_a = math.sqrt(magnitude_a)
-  magnitude_b = math.sqrt(magnitude_b)
-  return dot_product / (magnitude_a * magnitude_b)
-end
-
-local function data_ranked_by_relatedness(query, data, top_n)
-  local scores = {}
-  for i, item in pairs(data) do
-    scores[i] = { index = i, score = spatial_distance_cosine(item.embedding, query.embedding) }
-  end
-  table.sort(scores, function(a, b)
-    return a.score > b.score
-  end)
-  local result = {}
-  for i = 1, math.min(top_n, #scores) do
-    local srt = scores[i]
-    table.insert(result, vim.tbl_extend('keep', data[srt.index], { score = srt.score }))
-  end
-  return result
-end
 
 --- Build an outline for a buffer
 --- Follows the example of https://github.com/Aider-AI/aider/blob/0022c1a67e2b1bef61ccac61fb6fdea8a834e4b9/tests/fixtures/sample-code-base-repo-map.txt
@@ -177,45 +145,7 @@ function M.find_for_query(copilot, opts)
     return
   end
 
-  copilot:embed(context_files, {
-    on_error = on_error,
-    on_done = function(out)
-      out = vim.tbl_filter(function(item)
-        return item ~= nil
-      end, out)
-      if #out == 0 then
-        on_done({})
-        return
-      end
-
-      log.debug(string.format('Got %s embeddings', #out))
-      copilot:embed({
-        {
-          prompt = prompt,
-          content = selection,
-          filename = filename,
-          filetype = filetype,
-        },
-      }, {
-        on_error = on_error,
-        on_done = function(query_out)
-          local query = query_out[1]
-          if not query then
-            on_done({})
-            return
-          end
-          log.debug('Prompt:', query.prompt)
-          log.debug('Content:', query.content)
-          local data = data_ranked_by_relatedness(query, out, 20)
-          log.debug('Ranked data:', #data)
-          for i, item in ipairs(data) do
-            log.debug(string.format('%s: %s - %s', i, item.score, item.filename))
-          end
-          on_done(data)
-        end,
-      })
-    end,
-  })
+  on_done(context_files)
 end
 
 return M
