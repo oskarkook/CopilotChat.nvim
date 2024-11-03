@@ -106,35 +106,30 @@ function M.find_for_query(copilot, opts)
   local on_done = opts.on_done
   local on_error = opts.on_error
 
-  local context_files = {}
-  local function add_context(bufnr)
+  local function build_context(bufnr)
     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
     local content = table.concat(lines, '\n')
 
-    table.insert(context_files, {
+    return {
       content = content,
       filename = vim.api.nvim_buf_get_name(bufnr),
       filetype = vim.api.nvim_buf_get_option(bufnr, 'filetype'),
-    })
+    }
   end
 
+  local context_files
   if context == 'buffers' then
     context_files = vim.tbl_map(
-      add_context,
+      build_context,
       vim.tbl_filter(function(b)
         return vim.api.nvim_buf_is_loaded(b) and vim.fn.buflisted(b) == 1
       end, vim.api.nvim_list_bufs())
     )
   elseif context == 'buffer' then
-    add_context(active_bufnr)
+    context_files = { build_context(active_bufnr) }
   end
 
-  if #context_files == 0 then
-    on_done({})
-    return
-  end
-
-  on_done(context_files)
+  on_done(context_files or {})
 end
 
 return M
