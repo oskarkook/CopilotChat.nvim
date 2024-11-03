@@ -359,11 +359,19 @@ end
 ---@param config CopilotChat.config|CopilotChat.config.prompt|nil
 ---@param source CopilotChat.config.source?
 function M.ask(prompt, config, source)
-  config = vim.tbl_deep_extend('force', M.config, config or {})
   prompt = prompt or ''
-  local system_prompt, updated_prompt = update_prompts(prompt, config.system_prompt)
-  updated_prompt = vim.trim(updated_prompt)
-  if updated_prompt == '' then
+  config = vim.tbl_deep_extend('force', M.config, config or {})
+
+  local selected_context = config.context
+  if string.find(prompt, '@buffers') then
+    selected_context = 'buffers'
+  elseif string.find(prompt, '@buffer') then
+    selected_context = 'buffer'
+  end
+
+  local system_prompt, prompt = update_prompts(prompt, config.system_prompt)
+  prompt = vim.trim(prompt)
+  if prompt == '' then
     M.open(config, source)
     return
   end
@@ -384,7 +392,7 @@ function M.ask(prompt, config, source)
       and vim.api.nvim_buf_get_name(state.source.bufnr)
     )
   if selection.prompt_extra then
-    updated_prompt = updated_prompt .. ' ' .. selection.prompt_extra
+    prompt = prompt .. ' ' .. selection.prompt_extra
   end
 
   state.copilot:stop()
@@ -392,19 +400,12 @@ function M.ask(prompt, config, source)
   local history_before_prompt = vim.deepcopy(state.history)
   local copilot_prompt = string.gsub(prompt, '@buffers?%s*', '')
   table.insert(state.history, {
-    content = updated_prompt,
+    content = prompt,
     prompt = copilot_prompt,
     role = 'user',
   })
 
   state.chat:render_history(state.history, config)
-
-  local selected_context = config.context
-  if string.find(prompt, '@buffers') then
-    selected_context = 'buffers'
-  elseif string.find(prompt, '@buffer') then
-    selected_context = 'buffer'
-  end
 
   local has_progressed = false
   local function update_assistant_response(callback)
