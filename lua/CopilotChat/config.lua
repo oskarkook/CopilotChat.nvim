@@ -1,4 +1,3 @@
-local prompts = require('CopilotChat.prompts')
 local select = require('CopilotChat.select')
 
 --- @class CopilotChat.config.source
@@ -83,7 +82,7 @@ return {
   proxy = nil, -- [protocol://]host[:port] Use this proxy
   allow_insecure = false, -- Allow insecure server connections
 
-  system_prompt = prompts.COPILOT_INSTRUCTIONS, -- System prompt to use
+  system_prompt_name = '/COPILOT_INSTRUCTIONS', -- System prompt to use
   model = 'gpt-4o', -- GPT model to use, see ':CopilotChatModels' for available models
   temperature = 0.1, -- GPT temperature
 

@@ -92,38 +92,6 @@ local function find_lines_between_separator(lines, pattern, at_least_one)
   return result, separator_line_start, separator_line_finish, line_count
 end
 
-local function update_prompts(prompt, system_prompt)
-  local prompts_to_use = M.prompts()
-  local try_again = false
-  local result = string.gsub(prompt, [[/[%w_]+]], function(match)
-    local found = prompts_to_use[string.sub(match, 2)]
-    if found then
-      if found.kind == 'user' then
-        local out = found.prompt
-        if out and string.match(out, [[/[%w_]+]]) then
-          try_again = true
-        end
-        system_prompt = found.system_prompt or system_prompt
-        return out
-      elseif found.kind == 'system' then
-        system_prompt = found.prompt
-        return ''
-      end
-    end
-
-    return match
-  end)
-
-  result = vim.trim(result)
-  system_prompt = vim.trim(system_prompt)
-
-  if try_again then
-    return update_prompts(result, system_prompt)
-  end
-
-  return system_prompt, result
-end
-
 local function complete()
   local line = vim.api.nvim_get_current_line()
   local col = vim.api.nvim_win_get_cursor(0)[2]
@@ -356,6 +324,33 @@ function M.select_model()
   end)
 end
 
+local function expand_prompt(prompt, filter_callback)
+  local prompts = M.prompts()
+  local try_again = false
+  local result = string.gsub(prompt, [[/[%w_]+]], function(match)
+    local name = string.sub(match, 2)
+    local found = prompts[name]
+
+    if filter_callback(found) then
+      return expand_prompt(found.prompt, filter_callback)
+    end
+  end)
+
+  return result
+end
+
+local function expand_user_prompts(prompt)
+  return expand_prompt(prompt, function(found)
+    return found.kind == 'user'
+  end)
+end
+
+local function expand_system_prompts(prompt)
+  return expand_prompt(prompt, function(found)
+    return found.kind == 'system'
+  end)
+end
+
 local function get_selected_context(prompt, config)
   if string.find(prompt, '@buffers') then
     return 'buffers'
@@ -384,9 +379,11 @@ end
 ---@param config CopilotChat.config|CopilotChat.config.prompt|nil
 ---@param source CopilotChat.config.source?
 function M.ask(prompt, config, source)
-  prompt = prompt or ''
+  prompt = vim.trim(prompt or '')
   config = vim.tbl_deep_extend('force', M.config, config or {})
-  local system_prompt, processed_prompt = update_prompts(prompt, config.system_prompt)
+
+  local processed_prompt = expand_user_prompts(prompt)
+  local system_prompt_name = string.match(processed_prompt, [[(/[%w_]+)]]) or config.system_prompt_name
 
   if processed_prompt == '' then
     M.open(config, source)
@@ -410,6 +407,7 @@ function M.ask(prompt, config, source)
   local entry = {
     prompt = prompt,
     content = processed_prompt,
+    system_prompt_name = system_prompt_name,
     assistant_response = {
       state = 'in-progress',
       content = ''
@@ -444,7 +442,7 @@ function M.ask(prompt, config, source)
     on_done = function(embeddings)
       state.copilot:ask({
         prompt = entry.content,
-        system_prompt = system_prompt,
+        system_prompt = expand_system_prompts(system_prompt_name),
         history = state.history,
         selection = selection.lines,
         embeddings = embeddings,
@@ -844,8 +842,8 @@ function M.setup(config)
 
       map_key(M.config.mappings.show_system_prompt, bufnr, function()
         local last_entry = state.history[#state.history]
-        local prompt = (last_entry and last_entry.prompt) or ''
-        local system_prompt, _ = update_prompts(prompt, M.config.system_prompt)
+        local system_prompt_name = (last_entry and last_entry.system_prompt_name) or M.config.system_prompt_name
+        local system_prompt = expand_system_prompts(system_prompt_name)
         state.system_prompt:show(system_prompt, 'markdown', 'markdown', state.chat.winnr)
       end)
 

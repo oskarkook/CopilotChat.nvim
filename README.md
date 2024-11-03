@@ -205,7 +205,7 @@ Also see [here](/lua/CopilotChat/config.lua):
   proxy = nil, -- [protocol://]host[:port] Use this proxy
   allow_insecure = false, -- Allow insecure server connections
 
-  system_prompt = prompts.COPILOT_INSTRUCTIONS, -- System prompt to use
+  system_prompt_name = '/COPILOT_INSTRUCTIONS', -- System prompt to use
   model = 'gpt-4o', -- GPT model to use, see ':CopilotChatModels' for available models
   temperature = 0.1, -- GPT temperature
 
@@ -362,27 +362,6 @@ For collection of default `COPILOT_` (system) and `USER_` (user) prompts, see [h
   },
 }
 ```
-
-### Custom system prompts
-
-You can define custom system prompts by using `system_prompt` property when passing config around.
-
-```lua
-{
-  system_prompt = 'Your name is Github Copilot and you are a AI assistant for developers.',
-  prompts = {
-    Johnny = {
-      system_prompt = 'Your name is Johny Microsoft and you are not an AI assistant for developers.',
-      prompt = 'Explain how it works.',
-    },
-    Yarrr = {
-      system_prompt = 'You are fascinated by pirates, so please respond in pirate speak.'
-    },
-  },
-}
-```
-
-To use any of your custom prompts, simply do `:CopilotChat<prompt name>`. E.g. `:CopilotChatJohnny` or `:CopilotChatYarrr What is a sorting algo?`. Tab autocomplete will help you out.
 
 ### Customizing buffers
 
