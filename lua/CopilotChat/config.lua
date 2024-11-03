@@ -214,6 +214,9 @@ return {
       normal = '<CR>',
       insert = '<C-s>',
     },
+    retry = {
+      normal = '<C-r>'
+    },
     accept_diff = {
       normal = '<C-y>',
       insert = '<C-y>',
