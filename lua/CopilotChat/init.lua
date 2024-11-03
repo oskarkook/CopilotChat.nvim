@@ -863,14 +863,24 @@ function M.setup(config)
       end)
 
       map_key(M.config.mappings.retry, bufnr, function()
-        M.stop(false, state.config)
-
-        last_entry = table.remove(state.history)
-        if last_entry.role == 'assistant' then
-          last_entry = table.remove(state.history)
+        if #state.history == 0 then
+          return
         end
 
+        M.stop(false, state.config)
+        last_entry = table.remove(state.history)
         M.ask(last_entry.prompt, state.config, state.source)
+      end)
+
+      map_key(M.config.mappings.revert, bufnr, function()
+        if #state.history == 0 then
+          return
+        end
+
+        M.stop(false, state.config)
+        table.remove(state.history)
+        state.chat:render_history(state.history, state.config)
+        state.chat:finish()
       end)
 
       vim.api.nvim_create_autocmd({ 'BufEnter', 'BufLeave' }, {

@@ -217,6 +217,9 @@ return {
     retry = {
       normal = '<C-r>'
     },
+    revert = {
+      normal = '<C-S-r>'
+    },
     accept_diff = {
       normal = '<C-y>',
       insert = '<C-y>',
