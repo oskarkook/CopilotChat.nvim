@@ -110,32 +110,27 @@ function Chat:render_history(history, config)
   end
   -- </copied from old append function>
 
-  local lines = {}
 
   local question_prefix = config.question_header .. config.separator .. '\n\n'
   local answer_prefix = config.answer_header .. config.separator .. '\n\n'
   local error_prefix = config.error_header .. config.separator .. '\n\n'
 
+  local content = ''
   for _, entry in ipairs(history) do
-    local prefix
+    local assistant_prefix = entry.assistant_response.state == 'error' and error_prefix or answer_prefix
 
-    if entry.role == 'assistant' then
-      prefix = entry.state == 'error' and error_prefix or answer_prefix
-    else
-      prefix = question_prefix
-    end
-
-    vim.list_extend(lines, vim.split(prefix .. entry.content .. '\n', '\n'))
+    content = content .. question_prefix .. entry.content .. '\n\n'
+    content = content .. assistant_prefix .. entry.assistant_response.content .. '\n\n'
   end
 
   local last_entry = history[#history]
-  if last_entry == nil or (last_entry.role == 'assistant' and last_entry.state == 'done') then
-    vim.list_extend(lines, vim.split(question_prefix, '\n'))
-  elseif last_entry.role == 'user' then
-    vim.list_extend(lines, vim.split(answer_prefix, '\n'))
+  if last_entry == nil or last_entry.assistant_response.state == 'done' then
+    content = content .. question_prefix
+  else
+    content = content:sub(1, -3)
   end
 
-  vim.api.nvim_buf_set_lines(self.bufnr, 0, -1, false, lines)
+  vim.api.nvim_buf_set_lines(self.bufnr, 0, -1, false, vim.split(content, '\n'))
 
   -- <copied from old append function>
   self:render()

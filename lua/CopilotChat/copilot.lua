@@ -463,19 +463,46 @@ function Copilot:with_claude(model, on_done, on_error)
   })
 end
 
+local function clean_prompt(prompt)
+  return string.gsub(prompt, '@buffers?%s*', '')
+end
+
+local function unroll_history(history)
+  local unrolled_history = {}
+
+  for _, entry in ipairs(history) do
+    table.insert(unrolled_history, {
+      content = clean_prompt(entry.content),
+      role = 'user'
+    })
+
+    if entry.assistant_response.state == 'done' then
+      table.insert(unrolled_history, {
+        content = entry.assistant_response.content,
+        role = 'assistant'
+      })
+    end
+  end
+
+  return unrolled_history
+end
+
 --- Ask a question to Copilot
 ---@param prompt string: The prompt to send to Copilot
 ---@param history table<CopilotChat.copilot.message>: The history of the conversation
 ---@param opts CopilotChat.copilot.ask.opts: Options for the request
-function Copilot:ask(prompt, history, opts)
+function Copilot:ask(opts)
   opts = opts or {}
+
+  local prompt = clean_prompt(opts.prompt)
+  local system_prompt = opts.system_prompt
+  local history = unroll_history(opts.history)
   local embeddings = opts.embeddings or {}
   local filename = opts.filename or ''
   local filetype = opts.filetype or ''
   local selection = opts.selection or ''
   local start_row = opts.start_row or 0
   local end_row = opts.end_row or 0
-  local system_prompt = opts.system_prompt or prompts.COPILOT_INSTRUCTIONS
   local model = opts.model or 'gpt-4o-2024-05-13'
   local temperature = opts.temperature or 0.1
   local on_done = opts.on_done

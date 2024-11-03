@@ -31,7 +31,6 @@ local state = {
   config = nil,
 
   -- Tracking for overlays
-  last_system_prompt = nil,
   last_code_output = nil,
 
   -- Response for mappings
@@ -114,6 +113,9 @@ local function update_prompts(prompt, system_prompt)
 
     return match
   end)
+
+  result = vim.trim(result)
+  system_prompt = vim.trim(system_prompt)
 
   if try_again then
     return update_prompts(result, system_prompt)
@@ -354,6 +356,29 @@ function M.select_model()
   end)
 end
 
+local function get_selected_context(prompt, config)
+  if string.find(prompt, '@buffers') then
+    return 'buffers'
+  elseif string.find(prompt, '@buffer') then
+    return 'buffer'
+  end
+
+  return config.context
+end
+
+local function get_file_info(selection)
+  local filetype = selection.filetype
+    or (vim.api.nvim_buf_is_valid(state.source.bufnr) and vim.bo[state.source.bufnr].filetype)
+
+  local filename = selection.filename
+    or (
+      vim.api.nvim_buf_is_valid(state.source.bufnr)
+      and vim.api.nvim_buf_get_name(state.source.bufnr)
+    )
+
+  return filetype, filename
+end
+
 --- Ask a question to the Copilot model.
 ---@param prompt string
 ---@param config CopilotChat.config|CopilotChat.config.prompt|nil
@@ -361,17 +386,9 @@ end
 function M.ask(prompt, config, source)
   prompt = prompt or ''
   config = vim.tbl_deep_extend('force', M.config, config or {})
+  local system_prompt, processed_prompt = update_prompts(prompt, config.system_prompt)
 
-  local selected_context = config.context
-  if string.find(prompt, '@buffers') then
-    selected_context = 'buffers'
-  elseif string.find(prompt, '@buffer') then
-    selected_context = 'buffer'
-  end
-
-  local system_prompt, prompt = update_prompts(prompt, config.system_prompt)
-  prompt = vim.trim(prompt)
-  if prompt == '' then
+  if processed_prompt == '' then
     M.open(config, source)
     return
   end
@@ -382,41 +399,27 @@ function M.ask(prompt, config, source)
     M.stop(true, config)
   end
 
-  state.last_system_prompt = system_prompt
   local selection = get_selection()
-  local filetype = selection.filetype
-    or (vim.api.nvim_buf_is_valid(state.source.bufnr) and vim.bo[state.source.bufnr].filetype)
-  local filename = selection.filename
-    or (
-      vim.api.nvim_buf_is_valid(state.source.bufnr)
-      and vim.api.nvim_buf_get_name(state.source.bufnr)
-    )
+  local filetype, filename = get_file_info(selection)
   if selection.prompt_extra then
-    prompt = prompt .. ' ' .. selection.prompt_extra
+    processed_prompt = processed_prompt .. ' ' .. selection.prompt_extra
   end
 
   state.copilot:stop()
 
-  local history_before_prompt = vim.deepcopy(state.history)
-  local copilot_prompt = string.gsub(prompt, '@buffers?%s*', '')
-  table.insert(state.history, {
-    content = prompt,
-    prompt = copilot_prompt,
-    role = 'user',
-  })
-
+  local entry = {
+    prompt = prompt,
+    content = processed_prompt,
+    assistant_response = {
+      state = 'in-progress',
+      content = ''
+    }
+  }
+  table.insert(state.history, entry)
   state.chat:render_history(state.history, config)
 
-  local has_progressed = false
   local function update_assistant_response(callback)
-    if has_progressed then
-      state.history[#state.history] = callback(state.history[#state.history])
-    else
-      default_entry = {content = '', role = 'assistant', state = 'in-progress'}
-      table.insert(state.history, callback(default_entry))
-      has_progressed = true
-    end
-
+    state.history[#state.history].assistant_response = callback(state.history[#state.history].assistant_response)
     state.chat:render_history(state.history, config)
   end
 
@@ -432,22 +435,23 @@ function M.ask(prompt, config, source)
   end
 
   context.find_for_query(state.copilot, {
-    context = selected_context,
-    prompt = copilot_prompt,
+    context = get_selected_context(entry.prompt, config),
     selection = selection.lines,
     filename = filename,
     filetype = filetype,
     bufnr = state.source.bufnr,
     on_error = on_error,
     on_done = function(embeddings)
-      state.copilot:ask(copilot_prompt, history_before_prompt, {
+      state.copilot:ask({
+        prompt = entry.content,
+        system_prompt = system_prompt,
+        history = state.history,
         selection = selection.lines,
         embeddings = embeddings,
         filename = filename,
         filetype = filetype,
         start_row = selection.start_row,
         end_row = selection.end_row,
-        system_prompt = system_prompt,
         model = config.model,
         temperature = config.temperature,
         on_error = on_error,
@@ -839,12 +843,10 @@ function M.setup(config)
       end)
 
       map_key(M.config.mappings.show_system_prompt, bufnr, function()
-        local prompt = state.last_system_prompt or M.config.system_prompt
-        if not prompt then
-          return
-        end
-
-        state.system_prompt:show(prompt, 'markdown', 'markdown', state.chat.winnr)
+        local last_entry = state.history[#state.history]
+        local prompt = (last_entry and last_entry.prompt) or ''
+        local system_prompt, _ = update_prompts(prompt, M.config.system_prompt)
+        state.system_prompt:show(system_prompt, 'markdown', 'markdown', state.chat.winnr)
       end)
 
       map_key(M.config.mappings.show_user_selection, bufnr, function()
@@ -868,7 +870,7 @@ function M.setup(config)
           last_entry = table.remove(state.history)
         end
 
-        M.ask(last_entry.content, state.config, state.source)
+        M.ask(last_entry.prompt, state.config, state.source)
       end)
 
       vim.api.nvim_create_autocmd({ 'BufEnter', 'BufLeave' }, {

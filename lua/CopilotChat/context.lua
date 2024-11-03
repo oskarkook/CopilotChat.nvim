@@ -99,7 +99,6 @@ end
 ---@param opts CopilotChat.context.find_for_query.opts
 function M.find_for_query(copilot, opts)
   local context = opts.context
-  local prompt = opts.prompt
   local selection = opts.selection
   local filename = opts.filename
   local filetype = opts.filetype
