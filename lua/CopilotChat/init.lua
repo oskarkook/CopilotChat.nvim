@@ -272,18 +272,15 @@ function M.highlight_selection(clear)
 end
 
 --- Open the chat window.
----@param config CopilotChat.config|CopilotChat.config.prompt|nil
 ---@param source CopilotChat.config.source?
-function M.open(config, source)
-  config = vim.tbl_deep_extend('force', M.config, config or {})
-  state.config = config
+function M.open(source)
   state.source = vim.tbl_extend('keep', source or {}, {
     bufnr = vim.api.nvim_get_current_buf(),
     winnr = vim.api.nvim_get_current_win(),
   })
 
   utils.return_to_normal_mode()
-  state.chat:open(config)
+  state.chat:open(state.config)
   state.chat:follow()
   state.chat:focus()
 end
@@ -294,13 +291,12 @@ function M.close()
 end
 
 --- Toggle the chat window.
----@param config CopilotChat.config|nil
 ---@param source CopilotChat.config.source?
-function M.toggle(config, source)
+function M.toggle(source)
   if state.chat:visible() then
     M.close()
   else
-    M.open(config, source)
+    M.open(source)
   end
 end
 
@@ -403,19 +399,19 @@ end
 ---@param source CopilotChat.config.source?
 function M.ask(prompt, config, source)
   prompt = vim.trim(prompt or '')
-  config = vim.tbl_deep_extend('force', M.config, config or {})
+  state.config = vim.tbl_deep_extend('force', M.config, config or {})
 
-  M.open(config, source)
+  M.open(source)
   if prompt == '' then
     return
   end
 
-  if config.clear_chat_on_new_prompt then
-    M.stop(true, config)
+  if state.config.clear_chat_on_new_prompt then
+    M.stop(true, state.config)
   end
 
   local processed_prompt = expand_user_prompts(prompt)
-  local system_prompt_name = get_system_prompt_name(processed_prompt, state.history, config)
+  local system_prompt_name = get_system_prompt_name(processed_prompt, state.history, state.config)
   processed_prompt = clean_prompt(processed_prompt)
 
   local selection = get_selection()
@@ -436,12 +432,12 @@ function M.ask(prompt, config, source)
     }
   }
   table.insert(state.history, entry)
-  state.chat:render_history(state.history, config)
+  state.chat:render_history(state.history, state.config)
 
   local function update_last_entry(callback)
     local new_entry, extra_msg = callback(state.history[#state.history])
     state.history[#state.history] = new_entry
-    state.chat:render_history(state.history, config, extra_msg)
+    state.chat:render_history(state.history, state.config, extra_msg)
   end
 
   local function on_error(err)
@@ -455,7 +451,7 @@ function M.ask(prompt, config, source)
   end
 
   context.find_for_query(state.copilot, {
-    context = get_selected_context(entry.prompt, config),
+    context = get_selected_context(entry.prompt, state.config),
     selection = selection.lines,
     filename = filename,
     filetype = filetype,
@@ -472,8 +468,8 @@ function M.ask(prompt, config, source)
         filetype = filetype,
         start_row = selection.start_row,
         end_row = selection.end_row,
-        model = config.model,
-        temperature = config.temperature,
+        model = state.config.model,
+        temperature = state.config.temperature,
         on_error = on_error,
         on_done = function(response, token_count)
           vim.schedule(function()
@@ -487,8 +483,8 @@ function M.ask(prompt, config, source)
               end
               return entry, extra_msg
             end)
-            if config.callback then
-              config.callback(response, state.source)
+            if state.config.callback then
+              state.config.callback(response, state.source)
             end
           end)
         end,
