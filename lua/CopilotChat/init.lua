@@ -405,20 +405,18 @@ function M.ask(prompt, config, source)
   prompt = vim.trim(prompt or '')
   config = vim.tbl_deep_extend('force', M.config, config or {})
 
-  local processed_prompt = expand_user_prompts(prompt)
-  local system_prompt_name = get_system_prompt_name(processed_prompt, state.history, config)
-  processed_prompt = clean_prompt(processed_prompt)
-
-  if processed_prompt == '' then
-    M.open(config, source)
+  M.open(config, source)
+  if prompt == '' then
     return
   end
-
-  M.open(config, source)
 
   if config.clear_chat_on_new_prompt then
     M.stop(true, config)
   end
+
+  local processed_prompt = expand_user_prompts(prompt)
+  local system_prompt_name = get_system_prompt_name(processed_prompt, state.history, config)
+  processed_prompt = clean_prompt(processed_prompt)
 
   local selection = get_selection()
   local filetype, filename = get_file_info(selection)
@@ -866,7 +864,7 @@ function M.setup(config)
 
       map_key(M.config.mappings.show_system_prompt, bufnr, function()
         local last_entry = state.history[#state.history]
-        local system_prompt_name = (last_entry and last_entry.system_prompt_name) or M.config.system_prompt_name
+        local system_prompt_name = (last_entry and last_entry.system_prompt_name) or state.config.system_prompt_name
         local system_prompt = expand_system_prompts(system_prompt_name)
         state.system_prompt:show(system_prompt, 'markdown', 'markdown', state.chat.winnr)
       end)
