@@ -347,7 +347,10 @@ end
 
 local function expand_system_prompts(prompt)
   return expand_prompt(prompt, function(found)
-    return found.kind == 'system'
+    -- Expand all prompts. Once we are expanding the system prompts, we want to
+    -- expand all of them, even if they are originally defined as user prompts.
+    -- That is the behaviour with least surprises.
+    return true
   end)
 end
 
@@ -374,6 +377,26 @@ local function get_file_info(selection)
   return filetype, filename
 end
 
+local function get_system_prompt_name(prompt, history, config)
+  local requested_prompt_name = string.match(prompt, [[(/[%w_]+)]])
+
+  if requested_prompt_name then
+    return requested_prompt_name
+  end
+
+  local last_entry = state.history[#state.history]
+  if last_entry then
+    return last_entry.system_prompt_name
+  end
+
+  return config.system_prompt_name
+end
+
+local function clean_prompt(prompt)
+  prompt = string.gsub(prompt, [[/[%w_]+]], '')
+  return string.gsub(prompt, '@buffers?%s*', '')
+end
+
 --- Ask a question to the Copilot model.
 ---@param prompt string
 ---@param config CopilotChat.config|CopilotChat.config.prompt|nil
@@ -383,7 +406,8 @@ function M.ask(prompt, config, source)
   config = vim.tbl_deep_extend('force', M.config, config or {})
 
   local processed_prompt = expand_user_prompts(prompt)
-  local system_prompt_name = string.match(processed_prompt, [[(/[%w_]+)]]) or config.system_prompt_name
+  local system_prompt_name = get_system_prompt_name(processed_prompt, state.history, config)
+  processed_prompt = clean_prompt(processed_prompt)
 
   if processed_prompt == '' then
     M.open(config, source)

@@ -463,16 +463,12 @@ function Copilot:with_claude(model, on_done, on_error)
   })
 end
 
-local function clean_prompt(prompt)
-  return string.gsub(prompt, '@buffers?%s*', '')
-end
-
 local function unroll_history(history)
   local unrolled_history = {}
 
   for _, entry in ipairs(history) do
     table.insert(unrolled_history, {
-      content = clean_prompt(entry.content),
+      content = entry.content,
       role = 'user'
     })
 
@@ -494,7 +490,7 @@ end
 function Copilot:ask(opts)
   opts = opts or {}
 
-  local prompt = clean_prompt(opts.prompt)
+  local prompt = opts.prompt
   local system_prompt = opts.system_prompt
   local history = unroll_history(opts.history)
   local embeddings = opts.embeddings or {}
