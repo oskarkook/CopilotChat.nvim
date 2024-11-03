@@ -464,10 +464,12 @@ function Copilot:with_claude(model, on_done, on_error)
 end
 
 --- Ask a question to Copilot
----@param prompt string: The prompt to send to Copilot
 ---@param history table<CopilotChat.copilot.message>: The history of the conversation
 ---@param opts CopilotChat.copilot.ask.opts: Options for the request
-function Copilot:ask(prompt, history, opts)
+function Copilot:ask(history, opts)
+  history = vim.deepcopy(history)
+  local prompt = table.remove(history).content
+
   opts = opts or {}
   local embeddings = opts.embeddings or {}
   local filename = opts.filename or ''

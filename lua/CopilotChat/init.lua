@@ -397,13 +397,17 @@ function M.ask(prompt, config, source)
     updated_prompt = updated_prompt .. ' ' .. selection.prompt_extra
   end
 
-  if state.copilot:stop() then
-    append('\n\n' .. config.question_header .. config.separator .. '\n\n', config)
-  end
+  state.copilot:stop()
 
-  append(updated_prompt, config)
-  local original_prompt = updated_prompt
-  append('\n\n' .. config.answer_header .. config.separator .. '\n\n', config)
+  history_entry = {
+    original_content = updated_prompt,
+    content = string.gsub(prompt, '@buffers?%s*', ''),
+    role = 'user',
+  }
+  table.insert(state.history, history_entry)
+
+  state.chat:render_history(state.history, config)
+  append('\n' .. config.answer_header .. config.separator .. '\n\n', config)
 
   local selected_context = config.context
   if string.find(prompt, '@buffers') then
@@ -411,18 +415,8 @@ function M.ask(prompt, config, source)
   elseif string.find(prompt, '@buffer') then
     selected_context = 'buffer'
   end
-  updated_prompt = string.gsub(updated_prompt, '@buffers?%s*', '')
-
-  local function record_user_prompt()
-    table.insert(state.history, {
-      original_content = original_prompt,
-      content = updated_prompt,
-      role = 'user',
-    })
-  end
 
   local function on_error(err)
-    record_user_prompt()
     vim.schedule(function()
       append('\n\n' .. config.error_header .. config.separator .. '\n\n', config)
       append('```\n' .. err .. '\n```', config)
@@ -433,14 +427,14 @@ function M.ask(prompt, config, source)
 
   context.find_for_query(state.copilot, {
     context = selected_context,
-    prompt = updated_prompt,
+    prompt = history_entry.content,
     selection = selection.lines,
     filename = filename,
     filetype = filetype,
     bufnr = state.source.bufnr,
     on_error = on_error,
     on_done = function(embeddings)
-      state.copilot:ask(updated_prompt, state.history, {
+      state.copilot:ask(state.history, {
         selection = selection.lines,
         embeddings = embeddings,
         filename = filename,
@@ -452,8 +446,6 @@ function M.ask(prompt, config, source)
         temperature = config.temperature,
         on_error = on_error,
         on_done = function(response, token_count)
-          record_user_prompt()
-
           table.insert(state.history, {
             content = response,
             role = 'assistant',
@@ -461,7 +453,7 @@ function M.ask(prompt, config, source)
 
           vim.schedule(function()
             state.chat:render_history(state.history, config)
-            append('\n\n' .. config.question_header .. config.separator .. '\n\n', config)
+            append('\n' .. config.question_header .. config.separator .. '\n\n', config)
             state.response = response
             if token_count and token_count > 0 then
               state.chat:finish(token_count .. ' tokens used')
