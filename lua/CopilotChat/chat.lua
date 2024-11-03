@@ -97,7 +97,7 @@ function Chat:render()
   end
 end
 
-function Chat:render_history(history, config)
+function Chat:render_history(history, config, extra_msg)
   -- <copied from old append function>
   self:validate()
 
@@ -139,6 +139,10 @@ function Chat:render_history(history, config)
     self:follow()
   end
   -- </copied from old append function>
+
+  if last_entry == nil or last_entry.assistant_response.state == 'done' then
+    self:finish(extra_msg)
+  end
 end
 
 function Chat:active()

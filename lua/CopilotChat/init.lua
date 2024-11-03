@@ -418,19 +418,19 @@ function M.ask(prompt, config, source)
   table.insert(state.history, entry)
   state.chat:render_history(state.history, config)
 
-  local function update_assistant_response(callback)
-    state.history[#state.history].assistant_response = callback(state.history[#state.history].assistant_response)
-    state.chat:render_history(state.history, config)
+  local function update_last_entry(callback)
+    local new_entry, extra_msg = callback(state.history[#state.history])
+    state.history[#state.history] = new_entry
+    state.chat:render_history(state.history, config, extra_msg)
   end
 
   local function on_error(err)
     vim.schedule(function()
-      update_assistant_response(function(entry)
-        entry.content = err
-        entry.state = 'error'
+      update_last_entry(function(entry)
+        entry.assistant_response.content = err
+        entry.assistant_response.state = 'error'
         return entry
       end)
-      state.chat:finish()
     end)
   end
 
@@ -457,16 +457,16 @@ function M.ask(prompt, config, source)
         on_error = on_error,
         on_done = function(response, token_count)
           vim.schedule(function()
-            update_assistant_response(function(entry)
-              entry.response = response
-              entry.state = 'done'
-              return entry
+            update_last_entry(function(entry)
+              entry.assistant_response.content = response
+              entry.assistant_response.state = 'done'
+
+              local extra_msg
+              if token_count > 0 then
+                extra_msg = token_count .. ' tokens used'
+              end
+              return entry, extra_msg
             end)
-            if token_count and token_count > 0 then
-              state.chat:finish(token_count .. ' tokens used')
-            else
-              state.chat:finish()
-            end
             if config.callback then
               config.callback(response, state.source)
             end
@@ -474,8 +474,8 @@ function M.ask(prompt, config, source)
         end,
         on_progress = function(response)
           vim.schedule(function()
-            update_assistant_response(function(entry)
-              entry.content = entry.content .. response
+            update_last_entry(function(entry)
+              entry.assistant_response.content = entry.assistant_response.content .. response
               return entry
             end)
           end)
@@ -502,9 +502,10 @@ function M.stop(reset, config)
   wrap(function()
     if reset then
       state.history = {}
+    else
+      state.history[#state.history].assistant_response.state = 'done'
     end
     state.chat:render_history(state.history, config)
-    state.chat:finish()
   end)
 end
 
@@ -581,7 +582,6 @@ function M.load(name, history_path)
   local history = load_file(name, history_path)
   state.history = history
   state.chat:render_history(state.history, M.config)
-  state.chat:finish()
   log.info('Loaded Copilot history from ' .. path)
   M.open()
 end
@@ -880,7 +880,6 @@ function M.setup(config)
         M.stop(false, state.config)
         table.remove(state.history)
         state.chat:render_history(state.history, state.config)
-        state.chat:finish()
       end)
 
       vim.api.nvim_create_autocmd({ 'BufEnter', 'BufLeave' }, {
@@ -904,7 +903,6 @@ function M.setup(config)
       end
 
       state.chat:render_history(state.history, M.config)
-      state.chat:finish()
     end
   )
 
