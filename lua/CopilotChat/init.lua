@@ -402,6 +402,7 @@ function M.ask(prompt, config, source)
   end
 
   append(updated_prompt, config)
+  local original_prompt = updated_prompt
   append('\n\n' .. config.answer_header .. config.separator .. '\n\n', config)
 
   local selected_context = config.context
@@ -414,6 +415,7 @@ function M.ask(prompt, config, source)
 
   local function record_user_prompt()
     table.insert(state.history, {
+      original_content = original_prompt,
       content = updated_prompt,
       role = 'user',
     })
@@ -458,6 +460,7 @@ function M.ask(prompt, config, source)
           })
 
           vim.schedule(function()
+            state.chat:render_history(state.history, config)
             append('\n\n' .. config.question_header .. config.separator .. '\n\n', config)
             state.response = response
             if token_count and token_count > 0 then

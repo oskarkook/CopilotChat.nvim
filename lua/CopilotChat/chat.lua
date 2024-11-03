@@ -97,6 +97,31 @@ function Chat:render()
   end
 end
 
+function Chat:render_history(history, config)
+  local lines = {}
+  for _, entry in ipairs(history) do
+    local content = ''
+    if entry.role == 'user' then
+      content = config.question_header .. config.separator .. '\n\n' .. entry.original_content
+    elseif entry.role == 'assistant' then
+      content = config.answer_header .. config.separator .. '\n\n' .. entry.content
+    end
+    content = content .. '\n'
+    vim.list_extend(lines, vim.split(content, '\n'))
+  end
+
+  local last_line, last_column, _ = self:last()
+  vim.api.nvim_buf_set_text(
+    self.bufnr,
+    0,
+    0,
+    last_line,
+    last_column,
+    lines
+  )
+  self:render()
+end
+
 function Chat:active()
   return vim.api.nvim_get_current_win() == self.winnr
 end
