@@ -135,15 +135,7 @@ function Chat:render_history(history, config)
     vim.list_extend(lines, vim.split(answer_prefix, '\n'))
   end
 
-  local last_line, last_column, _ = self:last()
-  vim.api.nvim_buf_set_text(
-    self.bufnr,
-    0,
-    0,
-    last_line,
-    last_column,
-    lines
-  )
+  vim.api.nvim_buf_set_lines(self.bufnr, 0, -1, false, lines)
 
   -- <copied from old append function>
   self:render()
@@ -156,21 +148,6 @@ end
 
 function Chat:active()
   return vim.api.nvim_get_current_win() == self.winnr
-end
-
-function Chat:last()
-  self:validate()
-  local line_count = vim.api.nvim_buf_line_count(self.bufnr)
-  local last_line = line_count - 1
-  if last_line < 0 then
-    return 0, 0, line_count
-  end
-  local last_line_content = vim.api.nvim_buf_get_lines(self.bufnr, -2, -1, false)
-  if not last_line_content or #last_line_content == 0 then
-    return last_line, 0, line_count
-  end
-  local last_column = #last_line_content[1]
-  return last_line, last_column, line_count
 end
 
 function Chat:open(config)
@@ -282,12 +259,12 @@ function Chat:follow()
     return
   end
 
-  local last_line, last_column, line_count = self:last()
+  local line_count = vim.api.nvim_buf_line_count(self.bufnr)
   if line_count == 0 then
     return
   end
 
-  vim.api.nvim_win_set_cursor(self.winnr, { last_line + 1, last_column })
+  vim.api.nvim_win_set_cursor(self.winnr, { line_count, 0 })
 end
 
 function Chat:finish(msg)
