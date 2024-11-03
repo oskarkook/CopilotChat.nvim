@@ -122,16 +122,6 @@ local function update_prompts(prompt, system_prompt)
   return system_prompt, result
 end
 
---- Append a string to the chat window.
----@param str (string)
----@param config CopilotChat.config
-local function append(str, config)
-  state.chat:append(str)
-  if config and config.auto_follow_cursor then
-    state.chat:follow()
-  end
-end
-
 local function complete()
   local line = vim.api.nvim_get_current_line()
   local col = vim.api.nvim_win_get_cursor(0)[2]
@@ -399,15 +389,15 @@ function M.ask(prompt, config, source)
 
   state.copilot:stop()
 
-  history_entry = {
-    original_content = updated_prompt,
-    content = string.gsub(prompt, '@buffers?%s*', ''),
+  local history_before_prompt = vim.deepcopy(state.history)
+  local copilot_prompt = string.gsub(prompt, '@buffers?%s*', '')
+  table.insert(state.history, {
+    content = updated_prompt,
+    prompt = copilot_prompt,
     role = 'user',
-  }
-  table.insert(state.history, history_entry)
+  })
 
   state.chat:render_history(state.history, config)
-  append('\n' .. config.answer_header .. config.separator .. '\n\n', config)
 
   local selected_context = config.context
   if string.find(prompt, '@buffers') then
@@ -416,25 +406,40 @@ function M.ask(prompt, config, source)
     selected_context = 'buffer'
   end
 
+  local has_progressed = false
+  local function update_assistant_response(callback)
+    if has_progressed then
+      state.history[#state.history] = callback(state.history[#state.history])
+    else
+      default_entry = {content = '', role = 'assistant', state = 'in-progress'}
+      table.insert(state.history, callback(default_entry))
+      has_progressed = true
+    end
+
+    state.chat:render_history(state.history, config)
+  end
+
   local function on_error(err)
     vim.schedule(function()
-      append('\n\n' .. config.error_header .. config.separator .. '\n\n', config)
-      append('```\n' .. err .. '\n```', config)
-      append('\n\n' .. config.question_header .. config.separator .. '\n\n', config)
+      update_assistant_response(function(entry)
+        entry.content = err
+        entry.state = 'error'
+        return entry
+      end)
       state.chat:finish()
     end)
   end
 
   context.find_for_query(state.copilot, {
     context = selected_context,
-    prompt = history_entry.content,
+    prompt = copilot_prompt,
     selection = selection.lines,
     filename = filename,
     filetype = filetype,
     bufnr = state.source.bufnr,
     on_error = on_error,
     on_done = function(embeddings)
-      state.copilot:ask(state.history, {
+      state.copilot:ask(copilot_prompt, history_before_prompt, {
         selection = selection.lines,
         embeddings = embeddings,
         filename = filename,
@@ -446,15 +451,12 @@ function M.ask(prompt, config, source)
         temperature = config.temperature,
         on_error = on_error,
         on_done = function(response, token_count)
-          table.insert(state.history, {
-            content = response,
-            role = 'assistant',
-          })
-
           vim.schedule(function()
-            state.chat:render_history(state.history, config)
-            append('\n' .. config.question_header .. config.separator .. '\n\n', config)
-            state.response = response
+            update_assistant_response(function(entry)
+              entry.response = response
+              entry.state = 'done'
+              return entry
+            end)
             if token_count and token_count > 0 then
               state.chat:finish(token_count .. ' tokens used')
             else
@@ -465,9 +467,12 @@ function M.ask(prompt, config, source)
             end
           end)
         end,
-        on_progress = function(token)
+        on_progress = function(response)
           vim.schedule(function()
-            append(token, config)
+            update_assistant_response(function(entry)
+              entry.content = entry.content .. response
+              return entry
+            end)
           end)
         end,
       })
@@ -481,7 +486,6 @@ end
 function M.stop(reset, config)
   config = vim.tbl_deep_extend('force', M.config, config or {})
   state.response = nil
-  state.history = {}
   local stopped = reset and state.copilot:reset() or state.copilot:stop()
   local wrap = vim.schedule
   if not stopped then
@@ -492,11 +496,9 @@ function M.stop(reset, config)
 
   wrap(function()
     if reset then
-      state.chat:clear()
-    else
-      append('\n\n', config)
+      state.history = {}
     end
-    append(M.config.question_header .. M.config.separator .. '\n\n', config)
+    state.chat:render_history(state.history, config)
     state.chat:finish()
   end)
 end
@@ -573,27 +575,9 @@ function M.load(name, history_path)
   M.stop(true)
   local history = load_file(name, history_path)
   state.history = history
-  log.info('Loaded Copilot history from ' .. path)
-
-  for i, message in ipairs(history) do
-    if message.role == 'user' then
-      if i > 1 then
-        append('\n\n', state.config)
-      end
-      append(M.config.question_header .. M.config.separator .. '\n\n', state.config)
-      append(message.content, state.config)
-    elseif message.role == 'assistant' then
-      append('\n\n' .. M.config.answer_header .. M.config.separator .. '\n\n', state.config)
-      append(message.content, state.config)
-    end
-  end
-
-  if #history > 0 then
-    append('\n\n', state.config)
-  end
-  append(M.config.question_header .. M.config.separator .. '\n\n', state.config)
-
+  state.chat:render_history(state.history, M.config)
   state.chat:finish()
+  log.info('Loaded Copilot history from ' .. path)
   M.open()
 end
 
@@ -895,7 +879,7 @@ function M.setup(config)
         })
       end
 
-      append(M.config.question_header .. M.config.separator .. '\n\n', M.config)
+      state.chat:render_history(state.history, M.config)
       state.chat:finish()
     end
   )

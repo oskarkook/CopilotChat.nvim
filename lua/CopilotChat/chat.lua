@@ -98,16 +98,41 @@ function Chat:render()
 end
 
 function Chat:render_history(history, config)
+  -- <copied from old append function>
+  self:validate()
+
+  if self:active() then
+    utils.return_to_normal_mode()
+  end
+
+  if self.spinner then
+    self.spinner:start()
+  end
+  -- </copied from old append function>
+
   local lines = {}
+
+  local question_prefix = config.question_header .. config.separator .. '\n\n'
+  local answer_prefix = config.answer_header .. config.separator .. '\n\n'
+  local error_prefix = config.error_header .. config.separator .. '\n\n'
+
   for _, entry in ipairs(history) do
-    local content = ''
-    if entry.role == 'user' then
-      content = config.question_header .. config.separator .. '\n\n' .. entry.original_content
-    elseif entry.role == 'assistant' then
-      content = config.answer_header .. config.separator .. '\n\n' .. entry.content
+    local prefix
+
+    if entry.role == 'assistant' then
+      prefix = entry.state == 'error' and error_prefix or answer_prefix
+    else
+      prefix = question_prefix
     end
-    content = content .. '\n'
-    vim.list_extend(lines, vim.split(content, '\n'))
+
+    vim.list_extend(lines, vim.split(prefix .. entry.content .. '\n', '\n'))
+  end
+
+  local last_entry = history[#history]
+  if last_entry == nil or (last_entry.role == 'assistant' and last_entry.state == 'done') then
+    vim.list_extend(lines, vim.split(question_prefix, '\n'))
+  elseif last_entry.role == 'user' then
+    vim.list_extend(lines, vim.split(answer_prefix, '\n'))
   end
 
   local last_line, last_column, _ = self:last()
@@ -119,7 +144,14 @@ function Chat:render_history(history, config)
     last_column,
     lines
   )
+
+  -- <copied from old append function>
   self:render()
+
+  if config and config.auto_follow_cursor then
+    self:follow()
+  end
+  -- </copied from old append function>
 end
 
 function Chat:active()
@@ -139,35 +171,6 @@ function Chat:last()
   end
   local last_column = #last_line_content[1]
   return last_line, last_column, line_count
-end
-
-function Chat:append(str)
-  self:validate()
-
-  if self:active() then
-    utils.return_to_normal_mode()
-  end
-
-  if self.spinner then
-    self.spinner:start()
-  end
-
-  local last_line, last_column, _ = self:last()
-  vim.api.nvim_buf_set_text(
-    self.bufnr,
-    last_line,
-    last_column,
-    last_line,
-    last_column,
-    vim.split(str, '\n')
-  )
-  self:render()
-end
-
-function Chat:clear()
-  self:validate()
-  vim.api.nvim_buf_set_lines(self.bufnr, 0, -1, false, {})
-  self:render()
 end
 
 function Chat:open(config)
