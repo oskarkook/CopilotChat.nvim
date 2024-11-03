@@ -398,7 +398,7 @@ end
 ---@param config CopilotChat.config|CopilotChat.config.prompt|nil
 ---@param source CopilotChat.config.source?
 function M.ask(prompt, config, source)
-  prompt = vim.trim(prompt or '')
+  prompt = prompt or ''
   state.config = vim.tbl_deep_extend('force', M.config, config or {})
 
   M.open(source)
@@ -424,7 +424,7 @@ function M.ask(prompt, config, source)
 
   local entry = {
     prompt = prompt,
-    content = processed_prompt,
+    content = vim.trim(processed_prompt),
     system_prompt_name = system_prompt_name,
     assistant_response = {
       state = 'in-progress',
