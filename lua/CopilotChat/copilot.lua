@@ -309,7 +309,7 @@ local Copilot = class(function(self, proxy, allow_insecure)
   self.machineid = machine_id()
   self.current_job = nil
   self.models = nil
-  self.clause_enabled = false
+  self.claude_enabled = false
   self.extra_args = {
     -- Retry failed requests twice
     '--retry',
@@ -326,9 +326,6 @@ local Copilot = class(function(self, proxy, allow_insecure)
     '--no-keepalive', -- Don't reuse connections
     '--tcp-nodelay', -- Disable Nagle's algorithm for faster streaming
     '--no-buffer', -- Disable output buffering for streaming
-    '--fail', -- Return error on HTTP errors (4xx, 5xx)
-    '--silent', -- Don't show progress meter
-    '--show-error', -- Show errors even when silent
   }
 end)
 
