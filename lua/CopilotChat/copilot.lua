@@ -193,12 +193,14 @@ local function generate_ask_request(
   selection,
   system_prompt,
   model,
-  temperature
+  temperature,
+  max_output_tokens
 )
   local messages = {}
+  local stream = can_stream(model)
 
   local system_role = 'system'
-  if not can_stream(model) then
+  if not stream then
     system_role = 'user'
   end
 
@@ -232,23 +234,24 @@ local function generate_ask_request(
     role = 'user',
   })
 
-  if can_stream(model) then
-    return {
-      intent = true,
-      model = model,
-      n = 1,
-      stream = true,
-      temperature = temperature,
-      top_p = 1,
-      messages = messages,
-    }
-  else
-    return {
-      messages = messages,
-      stream = false,
-      model = model,
-    }
+  local out = {
+    messages = messages,
+    model = model,
+    stream = stream,
+  }
+
+  if max_output_tokens then
+    out.max_tokens = max_output_tokens
   end
+
+  if stream then
+    out.intent = true
+    out.n = 1
+    out.temperature = temperature
+    out.top_p = 1
+  end
+
+  return out
 end
 
 local function generate_embedding_request(inputs, model)
@@ -552,8 +555,8 @@ function Copilot:ask(opts)
   self:with_auth(function()
     self:with_models(function()
       local capabilities = self.models[model] and self.models[model].capabilities
-        or { limits = { max_prompt_tokens = 8192 }, tokenizer = 'cl100k_base' }
       local max_tokens = capabilities.limits.max_prompt_tokens -- FIXME: Is max_prompt_tokens the right limit?
+      local max_output_tokens = capabilities.limits.max_output_tokens
       local tokenizer = capabilities.tokenizer
       log.debug('Max tokens: ' .. max_tokens)
       log.debug('Tokenizer: ' .. tokenizer)
@@ -615,7 +618,8 @@ function Copilot:ask(opts)
             selection_message,
             system_prompt,
             model,
-            temperature
+            temperature,
+            max_output_tokens
           )
         )
 
