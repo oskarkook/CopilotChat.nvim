@@ -308,6 +308,26 @@ local Copilot = class(function(self, proxy, allow_insecure)
   self.current_job = nil
   self.models = nil
   self.clause_enabled = false
+  self.extra_args = {
+    -- Retry failed requests twice
+    '--retry',
+    '2',
+    -- Wait 1 second between retries
+    '--retry-delay',
+    '1',
+    -- Maximum time for the request
+    '--max-time',
+    math.floor(timeout * 2 / 1000),
+    -- Timeout for initial connection
+    '--connect-timeout',
+    '10',
+    '--no-keepalive', -- Don't reuse connections
+    '--tcp-nodelay', -- Disable Nagle's algorithm for faster streaming
+    '--no-buffer', -- Disable output buffering for streaming
+    '--fail', -- Return error on HTTP errors (4xx, 5xx)
+    '--silent', -- Don't show progress meter
+    '--show-error', -- Show errors even when silent
+  }
 end)
 
 function Copilot:with_auth(on_done, on_error)
@@ -340,6 +360,7 @@ function Copilot:with_auth(on_done, on_error)
       headers = headers,
       proxy = self.proxy,
       insecure = self.allow_insecure,
+      raw = self.extra_args,
       on_error = function(err)
         err = 'Failed to get response: ' .. vim.inspect(err)
         log.error(err)
@@ -380,6 +401,7 @@ function Copilot:with_models(on_done, on_error)
     headers = headers,
     proxy = self.proxy,
     insecure = self.allow_insecure,
+    raw = self.extra_args,
     on_error = function(err)
       err = 'Failed to get response: ' .. vim.inspect(err)
       log.error(err)
@@ -430,6 +452,7 @@ function Copilot:with_claude(model, on_done, on_error)
     headers = headers,
     proxy = self.proxy,
     insecure = self.allow_insecure,
+    raw = self.extra_args,
     on_error = function(err)
       err = 'Failed to enable Claude: ' .. vim.inspect(err)
       if string.find(err, business_check) then
@@ -690,6 +713,7 @@ function Copilot:ask(opts)
               body = temp_file(body),
               proxy = self.proxy,
               insecure = self.allow_insecure,
+              raw = self.extra_args,
               stream = stream_func,
               callback = callback_func,
               on_error = function(err)
@@ -767,6 +791,7 @@ function Copilot:embed(inputs, opts)
         body = temp_file(body),
         proxy = self.proxy,
         insecure = self.allow_insecure,
+        raw = self.extra_args,
         on_error = function(err)
           err = 'Failed to get response: ' .. vim.inspect(err)
           log.error(err)
