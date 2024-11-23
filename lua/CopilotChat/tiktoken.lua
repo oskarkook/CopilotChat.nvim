@@ -1,6 +1,7 @@
 local M = {}
 
 function M.load(tokenizer, on_done)
+  on_done()
 end
 
 function M.available()
