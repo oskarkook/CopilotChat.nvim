@@ -245,7 +245,6 @@ local function generate_ask_request(
   end
 
   if stream then
-    out.intent = true
     out.n = 1
     out.temperature = temperature
     out.top_p = 1
