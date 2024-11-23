@@ -471,15 +471,15 @@ function M.ask(prompt, config, source)
         model = state.config.model,
         temperature = state.config.temperature,
         on_error = on_error,
-        on_done = function(response, token_count)
+        on_done = function(response, token_count, token_max_count)
           vim.schedule(function()
             update_last_entry(function(entry)
               entry.assistant_response.content = response
               entry.assistant_response.state = 'done'
 
               local extra_msg
-              if token_count > 0 then
-                extra_msg = token_count .. ' tokens used'
+              if token_count and token_max_count and token_count > 0 then
+                extra_msg = token_count .. '/' .. token_max_count .. ' tokens used' 
               end
               return entry, extra_msg
             end)
