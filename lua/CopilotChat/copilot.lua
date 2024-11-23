@@ -567,6 +567,7 @@ function Copilot:ask(opts)
         )
 
         local errored = false
+        local last_message = nil
         local full_response = ''
 
         local function stream_func(err, line)
@@ -589,6 +590,7 @@ function Copilot:ask(opts)
             return
           elseif line == '[DONE]' then
             log.trace('Full response: ' .. full_response)
+            log.debug('Last message: ' .. vim.inspect(last_message))
             self.token_count = self.token_count + tiktoken.count(full_response)
 
             if self.current_job and on_done then
@@ -615,6 +617,7 @@ function Copilot:ask(opts)
             return
           end
 
+          last_message = content
           local choice = content.choices[1]
           local is_full = choice.message ~= nil
           content = is_full and choice.message.content or choice.delta.content
@@ -629,6 +632,7 @@ function Copilot:ask(opts)
 
           if is_full then
             log.trace('Full response: ' .. content)
+            log.debug('Last message: ' .. vim.inspect(last_message))
             self.token_count = self.token_count + tiktoken.count(content)
 
             if self.current_job and on_done then
